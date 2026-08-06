@@ -1,0 +1,5 @@
+/pkg/
+/tmp/
+.DS_Store
+Gemfile.lock
+/.idea/
