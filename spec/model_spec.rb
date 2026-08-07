@@ -82,6 +82,49 @@ RSpec.describe RailsRuntimes::Model do
     expect(id).to match(/\A[0-9a-f-]{36}\z/i)
   end
 
+  it "supports multi-store bindings and class-level graph_terms" do
+    out = described_class.define("Notes::Note", table: "notes") do
+      field :id, type: :uuid, null: false, primary_key: true
+      field :title, type: :string, null: false
+      identity :id
+      store surface: :server, table: "notes", driver_kind: :active_record
+      store surface: :browser, table: "notes", driver_kind: :opfs_sqlite
+      local_only
+    end
+    expect(out.ok?).to be(true), out.to_h.inspect
+    schema = out.value
+    expect(schema.name).to eq("Notes::Note")
+    expect(schema.bindings.map(&:surface)).to contain_exactly(:server, :browser)
+    expect(schema.binding_for(:server).driver_kind).to eq(:active_record)
+    expect(schema.binding_for(:browser).table).to eq("notes")
+    expect(schema.binding_for(:server).iri).to eq("urn:rr:binding:notes.note:server")
+
+    terms = schema.graph_terms
+    expect(terms).to be_frozen
+    expect(terms).to include(
+      ["urn:rr:model:notes.note", "urn:rr:hasBinding", "urn:rr:binding:notes.note:server"]
+    )
+    expect(terms).to include(
+      ["urn:rr:model:notes.note", "urn:rr:hasBinding", "urn:rr:binding:notes.note:browser"]
+    )
+    expect(terms).to include(
+      ["urn:rr:binding:notes.note:server", "urn:rr:driverKind", "active_record"]
+    )
+    expect(terms).to include(
+      ["urn:rr:binding:notes.note:browser", "urn:rr:driverKind", "opfs_sqlite"]
+    )
+  end
+
+  it "derives a default binding when store is omitted (0.1.0 back-compat)" do
+    out = described_class.define("Solo::Item", table: "items") do
+      field :id, type: :uuid, null: false, primary_key: true
+      identity :id
+    end
+    schema = out.value
+    expect(schema.bindings.size).to eq(1)
+    expect(schema.binding_for(:default).table).to eq("items")
+  end
+
   it "contains no private-substrate vocabulary in library sources" do
     root = File.expand_path("../lib", __dir__)
     hits = Dir[File.join(root, "**", "*.rb")].flat_map do |path|

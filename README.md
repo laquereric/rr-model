@@ -8,9 +8,27 @@ Part of the **RailsRuntimes** ecosystem. Apache-2.0.
 
 Ruby namespace: `RailsRuntimes::Model` (`require "rails_runtimes/model"` or `require "rr-model"`).
 
+## Multi-store bindings (0.2)
+
+```ruby
+schema = RailsRuntimes::Model.define("Notes::Note", table: "notes") do
+  field :id, type: :uuid, null: false, primary_key: true
+  field :title, type: :string, null: false
+  identity :id
+  store surface: :server, table: "notes", driver_kind: :active_record
+  store surface: :browser, table: "notes", driver_kind: :opfs_sqlite
+end.value
+
+schema.bindings            # => [Binding, Binding]
+schema.binding_for(:server)
+schema.graph_terms         # plain frozen [s,p,o] with urn:rr: IRIs (no RDF lib)
+```
+
+Logical identity stays `Notes::Note`. Route drivers by surface in `rr-store`.
+
 ## Status
 
-`0.1.0` — portable core.
+`0.2.0` — portable core + multi-store bindings + graph provenance terms.
 
 ## Copyright
 

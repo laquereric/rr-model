@@ -6,6 +6,7 @@
 require "digest"
 require "json"
 require_relative "identity"
+require_relative "binding"
 
 module RailsRuntimes
   module Model
@@ -31,7 +32,6 @@ module RailsRuntimes
         }
       end
 
-      # Hash form expected by RailsRuntimes::Crud.derive_columns
       def to_column_hash
         { name: name.to_s, type: type, null: null }
       end
@@ -61,10 +61,10 @@ module RailsRuntimes
 
     class Schema
       attr_reader :name, :namespace, :table, :columns, :associations, :validations,
-                  :identity, :sync_policy, :descriptor_version, :definition_errors
+                  :identity, :sync_policy, :bindings, :descriptor_version, :definition_errors
 
       def initialize(name:, namespace:, table:, columns:, associations:, validations:,
-                     identity:, sync_policy:, descriptor_version: 1, definition_errors: [])
+                     identity:, sync_policy:, bindings: [], descriptor_version: 1, definition_errors: [])
         @name = name.to_s.freeze
         @namespace = namespace.to_s.freeze
         @table = table.to_s.freeze
@@ -73,6 +73,7 @@ module RailsRuntimes
         @validations = validations.freeze
         @identity = identity
         @sync_policy = sync_policy
+        @bindings = Array(bindings).freeze
         @descriptor_version = descriptor_version
         @definition_errors = definition_errors.freeze
         freeze
@@ -94,9 +95,27 @@ module RailsRuntimes
         sync_policy.enabled?
       end
 
-      # rr-crud interop: array of column hashes {name:, type:, null:}
       def column_hashes
         columns.map(&:to_column_hash)
+      end
+
+      def binding_for(surface)
+        surface = surface.to_sym
+        bindings.find { |b| b.surface == surface } ||
+          bindings.find { |b| b.surface == :default }
+      end
+
+      def table_for(surface)
+        binding_for(surface)&.table || table
+      end
+
+      # Class-level store-origin provenance (plain frozen [s,p,o] arrays).
+      def graph_terms
+        GraphTerms.for_schema(self)
+      end
+
+      def model_iri
+        GraphTerms.model_iri(name)
       end
 
       def descriptor_body
@@ -109,7 +128,8 @@ module RailsRuntimes
           associations: associations.map(&:to_h),
           validations: validations.map(&:to_h),
           identity: identity.to_h,
-          sync: sync_policy.to_h
+          sync: sync_policy.to_h,
+          bindings: bindings.map(&:to_h)
         }
       end
 

@@ -5,6 +5,7 @@
 
 require_relative "types"
 require_relative "schema"
+require_relative "binding"
 require_relative "outcome"
 
 module RailsRuntimes
@@ -27,6 +28,7 @@ module RailsRuntimes
         @fields = []
         @associations = []
         @validations = []
+        @store_bindings = []
         @identity = nil
         @sync_policy = SyncPolicy.new(mode: :local_only, scope: nil, conflict: :manual, tombstones: true)
         @errors = []
@@ -91,13 +93,29 @@ module RailsRuntimes
         self
       end
 
+      # Repeatable store binding. surface: :server | :browser | :default
+      def store(surface:, table: nil, driver_kind: nil)
+        surf = surface.to_sym
+        if @store_bindings.any? { |b| b[:surface] == surf }
+          @errors << { reason: :duplicate_store_binding, details: { surface: surf } }
+          return self
+        end
+        @store_bindings << {
+          surface: surf,
+          table: (table || @table).to_s,
+          driver_kind: driver_kind&.to_sym
+        }
+        self
+      end
+
       def finalize
         validate_identity
         validate_associations
+        bindings = build_bindings
         schema = Schema.new(
           name: @name, namespace: @namespace, table: @table, columns: @fields,
           associations: @associations, validations: @validations, identity: identity_or_placeholder,
-          sync_policy: @sync_policy, definition_errors: @errors
+          sync_policy: @sync_policy, bindings: bindings, definition_errors: @errors
         )
         schema.valid_definition? ? Outcome.ok(schema) : Outcome.err(:invalid_schema, details: { errors: @errors, schema: schema })
       rescue StandardError => e
@@ -105,6 +123,21 @@ module RailsRuntimes
       end
 
       private
+
+      def build_bindings
+        raw = @store_bindings.dup
+        if raw.empty?
+          raw << { surface: :default, table: @table, driver_kind: nil }
+        end
+        raw.map do |b|
+          Binding.new(
+            logical_model: @name,
+            surface: b[:surface],
+            table: b[:table],
+            driver_kind: b[:driver_kind]
+          )
+        end
+      end
 
       def validate_identity
         if @identity.nil?
